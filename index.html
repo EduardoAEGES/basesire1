@@ -97,10 +97,23 @@
 
   <h2>Editor de Comprobantes para Reemplazo de RCE</h2>
 
-  <input type="file" id="csvFile" accept=".csv">
+  <input type="file" id="csvFile" accept=".csv, .txt">
   <button onclick="agregarFila()">Agregar Fila</button>
   <button onclick="eliminarFilas()" style="background:#d93025;">Eliminar Fila(s)</button>
-  <button onclick="exportarTXT()">Exportar LE.txt</button>
+  <button onclick="exportarArchivo()">Exportar</button>
+
+  <span style="margin-left: 20px;">Formato:</span>
+  <select id="selFormato">
+    <option value="txt">TXT</option>
+    <option value="csv">CSV</option>
+  </select>
+
+  <span>Separador:</span>
+  <select id="selSeparador">
+    <option value="|">Pipe ( | )</option>
+    <option value=";">Punto y coma ( ; )</option>
+    <option value=",">Coma ( , )</option>
+  </select>
 
   <!-- NUEVO CONTENEDOR DE METADATOS EDITABLES -->
   <div class="info-box" style="display:flex; flex-wrap:wrap; gap:15px; align-items:center;">
@@ -247,110 +260,138 @@
 
 
     document.getElementById('csvFile').addEventListener('change', function (e) {
+      if (!e.target.files.length) return;
+
       const file = e.target.files[0];
       const reader = new FileReader();
       reader.onload = function (event) {
-        crearTabla(event.target.result);
+        crearTablaDesdeArchivo(event.target.result);
       };
       reader.readAsText(file);
+
+      // Reset input value to allow re-uploading same file
+      e.target.value = '';
     });
 
-    function crearTabla(texto) {
-      const filas = texto.trim().split("\n");
-      const tabla = document.getElementById("tabla");
-      const thead = tabla.querySelector("thead");
-      const tbody = tabla.querySelector("tbody");
+    function crearTablaDesdeArchivo(texto) {
+      if (!texto || !texto.trim()) return;
 
-      thead.innerHTML = "";
+      const lineas = texto.trim().split(/\r?\n/);
+      if (lineas.length === 0) return;
+
+      // 1. DETECTAR SEPARADOR
+      // Check first line
+      const linea1 = lineas[0];
+      const pipes = (linea1.match(/\|/g) || []).length;
+      const comas = (linea1.match(/,/g) || []).length;
+      const puntosycoma = (linea1.match(/;/g) || []).length;
+
+      let separador = "|";
+      if (puntosycoma > pipes && puntosycoma > comas) separador = ";";
+      if (comas > pipes && comas > puntosycoma) separador = ",";
+
+      // 2. VALIDACION DE ESTRUCTURA Y CABECERA INTELIGENTE
+      let dataStartIndex = 0;
+      const cols1 = linea1.split(separador);
+      const regexRUC = /^\d{11}$/;
+      const regexPeriodo = /^\d{6}$/;
+
+      // Verificamos Linea 1
+      const esValidoL1 = (cols1.length >= 3) && regexRUC.test(cols1[0]) && regexPeriodo.test(cols1[2]);
+
+      if (!esValidoL1) {
+        // Si Linea 1 falla, verificamos Linea 2 (por si L1 es Header)
+        if (lineas.length > 1) {
+          const linea2 = lineas[1];
+          const cols2 = linea2.split(separador);
+          const esValidoL2 = (cols2.length >= 3) && regexRUC.test(cols2[0]) && regexPeriodo.test(cols2[2]);
+
+          if (esValidoL2) {
+            // Linea 1 era Header, empezamos desde Linea 2
+            dataStartIndex = 1;
+          } else {
+            // Ni linea 1 ni linea 2 validas -> Error
+            alert("Archivo inválido o archivo no cumple con la estructura mínima.\n\nEstructura requerida:\nRUC (11 dígitos) | Denominación (Texto) | Periodo (AAAAMM, 6 dígitos)");
+            document.getElementById('csvFile').value = '';
+            return;
+          }
+        } else {
+          // Solo hay 1 linea y es invalida -> Error
+          alert("Archivo inválido o archivo no cumple con la estructura mínima.\n\nEstructura requerida:\nRUC (11 dígitos) | Denominación (Texto) | Periodo (AAAAMM, 6 dígitos)");
+          document.getElementById('csvFile').value = '';
+          return;
+        }
+      }
+
+      // 3. NO TOCAR EL HEADER (thead)
+      const tabla = document.getElementById("tabla");
+      const tbody = tabla.querySelector("tbody");
       tbody.innerHTML = "";
 
+      // 4. PROCESAR LINEAS
       let rucDetectado = "", denominacionDetectada = "", periodoDetectado = "";
+      let rowCounter = 0;
 
-      filas.forEach((fila, i) => {
+      for (let i = dataStartIndex; i < lineas.length; i++) {
+        const linea = lineas[i];
+        if (!linea.trim()) continue;
+
+        rowCounter++;
         const tr = document.createElement("tr");
-        const columnas = fila.split(",");
+        const columnas = linea.split(separador);
 
-        if (i == 0) {
-          // ENCABEZADO
+        // 1. Checkbox Column
+        const tdCheck = document.createElement("td");
+        const checkbox = document.createElement("input");
+        checkbox.type = "checkbox";
+        tdCheck.appendChild(checkbox);
+        tdCheck.style.textAlign = "center";
+        tr.appendChild(tdCheck);
 
-          // 1. Checkbox Header
-          const thCheck = document.createElement("th");
-          thCheck.style.width = "30px";
-          thCheck.innerText = "✔";
-          tr.appendChild(thCheck);
+        // 2. Columna Numero de Registro
+        const tdRegistro = document.createElement("td");
+        tdRegistro.innerText = rowCounter;
+        tdRegistro.style.fontWeight = "bold";
+        tdRegistro.contentEditable = false;
+        tr.appendChild(tdRegistro);
 
-          // 2. Numero Header
-          const thRegistro = document.createElement("th");
-          thRegistro.innerText = "N°";
-          tr.appendChild(thRegistro);
-
-          // 3. Data Headers
-          columnas.forEach(col => {
-            const th = document.createElement("th");
-            th.innerText = col;
-            tr.appendChild(th);
-          });
-
-          thead.appendChild(tr);
-
-        } else {
-
-          // 1. Checkbox Column
-          const tdCheck = document.createElement("td");
-          const checkbox = document.createElement("input");
-          checkbox.type = "checkbox";
-          tdCheck.appendChild(checkbox);
-          tdCheck.style.textAlign = "center";
-          tr.appendChild(tdCheck);
-
-          // 2. Columna Numero de Registro
-          const tdRegistro = document.createElement("td");
-          tdRegistro.innerText = i;
-          tdRegistro.style.fontWeight = "bold";
-          tdRegistro.contentEditable = false;
-          tr.appendChild(tdRegistro);
-
-          // 3. Data Columns
-          columnas.forEach((col, j) => {
-            const td = document.createElement("td");
-            td.contentEditable = true;
-
-            // DETECTAR DATOS DE LA PRIMERA FILA DE DATOS (i==1)
-            // Asumiendo formato: col 0 = RUC, col 1 = Denom, col 2 = Periodo
-            if (i == 1) {
-              if (j == 0) rucDetectado = col;
-              if (j == 1) denominacionDetectada = col;
-              if (j == 2) periodoDetectado = col;
-            }
-
-            // Dejar vacía columna 4 (index 3) si se requiere limpiar
-            // (Mantenemos logica anterior: j==3 vacio)
-            if (j == 3) {
-              td.innerText = "";
-            } else {
-              td.innerText = col;
-            }
-
-            tr.appendChild(td);
-          });
-
-          tbody.appendChild(tr);
+        // 3. Data Columns
+        // Detectar metadata en la primera fila de DATOS
+        if (i === dataStartIndex) {
+          if (columnas.length > 0) rucDetectado = columnas[0];
+          if (columnas.length > 1) denominacionDetectada = columnas[1];
+          if (columnas.length > 2) periodoDetectado = columnas[2];
         }
 
-      });
+        // Llenar datos
+        const totalHeaders = tabla.querySelectorAll("thead th").length - 2; // -chk -num
 
-      // ACTUALIZAR INPUTS CON LO DETECTADO
+        for (let k = 0; k < totalHeaders; k++) {
+          const td = document.createElement("td");
+          td.contentEditable = true;
+
+          if (k < columnas.length) {
+            td.innerText = columnas[k];
+          } else {
+            td.innerText = "";
+          }
+          tr.appendChild(td);
+        }
+
+        tbody.appendChild(tr);
+      }
+
+      // 5. ACTUALIZAR METADATOS
       if (rucDetectado) document.getElementById("txtRuc").value = rucDetectado;
       if (denominacionDetectada) document.getElementById("txtDenom").value = denominacionDetectada;
 
       if (periodoDetectado && periodoDetectado.length >= 6) {
+        // Formato esperado YYYYMM
         const anio = periodoDetectado.substring(0, 4);
         const mes = periodoDetectado.substring(4, 6);
         document.getElementById("selAnio").value = anio;
         document.getElementById("selMes").value = mes;
       }
-
-      // No necesitamos mostrarInfo ya que ahora estan los inputs
     }
 
     function actualizarTodo() {
@@ -448,13 +489,15 @@
       });
     }
 
-    function exportarTXT() {
+    function exportarArchivo() {
       const tabla = document.getElementById("tabla");
-      let txt = "";
-      const separador = "|";
+      let contenido = "";
 
-      // Header REMOVIDO por solicitud del usuario
-      // "...que no se exporten los encabezados solo los datos..."
+      const formato = document.getElementById("selFormato").value; // txt or csv
+      const separador = document.getElementById("selSeparador").value;
+
+      // Header REMOVIDO
+      // Solo datos
 
       // Body
       const filas = tabla.querySelectorAll("tbody tr");
@@ -465,26 +508,30 @@
         for (let i = 2; i < celdas.length; i++) {
           datos.push(celdas[i].innerText);
         }
-        txt += datos.join(separador) + "\n";
+        contenido += datos.join(separador) + "\n";
       });
 
       // Generar Nombre de Archivo
-      // Usar los valores de los INPUTS, que son los actuales
       const ruc = document.getElementById("txtRuc").value;
       const anio = document.getElementById("selAnio").value;
       const mes = document.getElementById("selMes").value;
       const periodo = anio + mes;
 
-      let nombreArchivo = "exportado.txt";
+      let extension = "." + formato;
       let nombreBase = "exportado";
 
       if (ruc && periodo) {
         nombreBase = `LE${ruc}${periodo}00080400021112`;
-        nombreArchivo = `${nombreBase}.txt`;
       }
 
-      // 1. Descargar TXT
-      const blob = new Blob([txt], { type: "text/plain" });
+      let nombreArchivo = nombreBase + extension;
+
+      // 1. Descargar Archivo Principal (TXT o CSV)
+      // Tipo MIME
+      let mimeType = "text/plain";
+      if (formato === "csv") mimeType = "text/csv";
+
+      const blob = new Blob([contenido], { type: mimeType });
       const enlace = document.createElement("a");
       enlace.href = URL.createObjectURL(blob);
       enlace.download = nombreArchivo;
@@ -492,7 +539,7 @@
 
       // 2. Descargar ZIP
       const zip = new JSZip();
-      zip.file(nombreArchivo, txt);
+      zip.file(nombreArchivo, contenido);
 
       zip.generateAsync({ type: "blob" })
         .then(function (content) {

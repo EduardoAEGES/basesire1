@@ -1,0 +1,488 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="UTF-8">
+  <title>Editor RCE Edu V1</title>
+
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 25px;
+      background: #f4f6f9;
+      font-size: 12px;
+    }
+
+    h2 {
+      margin-bottom: 10px;
+    }
+
+    button {
+      padding: 6px 12px;
+      margin: 4px;
+      border: none;
+      background: #1a73e8;
+      color: white;
+      cursor: pointer;
+      border-radius: 4px;
+      font-size: 12px;
+    }
+
+    button:hover {
+      background: #1558b0;
+    }
+
+    .info-box {
+      background: white;
+      padding: 12px;
+      margin-bottom: 15px;
+      border-left: 4px solid #1a73e8;
+      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
+    }
+
+    /* CONTENEDOR CON SCROLL */
+    .table-container {
+      max-height: 500px;
+      overflow-y: auto;
+      overflow-x: auto;
+      border: 1px solid #ccc;
+      background: white;
+    }
+
+    /* TABLA */
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      min-width: 1200px;
+      font-size: 11px;
+    }
+
+    th {
+      background: #2c3e50;
+      color: white;
+      padding: 6px;
+      text-align: left;
+      position: sticky;
+      top: 0;
+      z-index: 2;
+      font-size: 11px;
+    }
+
+    td {
+      padding: 5px;
+      border: 1px solid #ddd;
+    }
+
+
+
+    /* FILAS ALTERNADAS CORRECTAMENTE */
+    tbody tr:nth-child(odd) {
+      background: #ffffff;
+    }
+
+    tbody tr:nth-child(even) {
+      background: #e9edf3;
+    }
+  </style>
+
+</head>
+
+<body>
+
+  <h2>Editor de Comprobantes para Reemplazo de RCE</h2>
+
+  <input type="file" id="csvFile" accept=".csv">
+  <button onclick="agregarFila()">Agregar Fila</button>
+  <button onclick="eliminarFilas()" style="background:#d93025;">Eliminar Fila(s)</button>
+  <button onclick="exportarTXT()">Exportar LE.txt</button>
+
+  <!-- NUEVO CONTENEDOR DE METADATOS EDITABLES -->
+  <div class="info-box" style="display:flex; flex-wrap:wrap; gap:15px; align-items:center;">
+
+    <div>
+      <label><strong>RUC:</strong></label>
+      <input type="text" id="txtRuc" placeholder="Ej: 20100123456" style="padding:4px;">
+    </div>
+
+    <div>
+      <label><strong>Denominación:</strong></label>
+      <input type="text" id="txtDenom" placeholder="Ej: EMPRESA S.A.C" style="padding:4px; width:250px;">
+    </div>
+
+    <div>
+      <label><strong>Periodo:</strong></label>
+      <select id="selMes" style="padding:4px;">
+        <option value="01">Enero</option>
+        <option value="02">Febrero</option>
+        <option value="03">Marzo</option>
+        <option value="04">Abril</option>
+        <option value="05">Mayo</option>
+        <option value="06">Junio</option>
+        <option value="07">Julio</option>
+        <option value="08">Agosto</option>
+        <option value="09">Septiembre</option>
+        <option value="10">Octubre</option>
+        <option value="11">Noviembre</option>
+        <option value="12">Diciembre</option>
+      </select>
+      <select id="selAnio" style="padding:4px;"></select>
+    </div>
+
+    <button onclick="actualizarTodo()" style="background:#f39c12;">Actualizar RUC/Periodo</button>
+
+  </div>
+
+  <div class="table-container">
+    <table id="tabla">
+      <thead></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <script>
+
+
+    // VARIABLES GLOBALES (ya no son estrictamente necesarias pero las mantenemos por compatibilidad si se usan)
+    let globalRuc = "";
+    let globalPeriodo = "";
+
+    // INICIALIZACION
+    window.onload = function () {
+      // Llenar Select de Años (Año actual - 5 a Año actual + 5)
+      const currentYear = new Date().getFullYear();
+      const selAnio = document.getElementById("selAnio");
+      for (let y = currentYear - 5; y <= currentYear + 5; y++) {
+        const opt = document.createElement("option");
+        opt.value = y;
+        opt.innerText = y;
+        if (y === currentYear) opt.selected = true;
+        selAnio.appendChild(opt);
+      }
+
+      // Crear Tabla por Defecto
+      crearTablaDefault();
+    };
+
+    function crearTablaDefault() {
+      const tabla = document.getElementById("tabla");
+      const thead = tabla.querySelector("thead");
+      const tbody = tabla.querySelector("tbody");
+      thead.innerHTML = "";
+      tbody.innerHTML = "";
+
+      // Headers especificos
+      const headers = [
+        "RUC", "Apellidos y Nombres o Razón Social", "Periodo", "CAR SUNAT", "Fecha de emisión",
+        "Fecha Vcto/Pago", "Tipo CP/Doc.", "Serie del CDP", "Año", "Nro CP o Doc. Nro Inicial (Rango)",
+        "Nro Final (Rango)", "Tipo Doc Identidad", "Nro Doc Identidad", "Apellidos Nombres/ Razón Social",
+        "BI Gravado DG", "IGV / IPM DG", "BI Gravado DGNG", "IGV / IPM DGNG", "BI Gravado DNG",
+        "IGV / IPM DNG", "Valor Adq. NG", "ISC", "ICBPER", "Otros Trib/ Cargos", "Total CP",
+        "Moneda", "Tipo de Cambio", "Fecha Emisión Doc Modificado", "Tipo CP Modificado",
+        "Serie CP Modificado", "COD. DAM O DSI", "Nro CP Modificado", "Clasif de Bss y Sss",
+        "ID Proyecto Operadores", "PorcPart", "IMB", "CAR Orig/ Ind E o I", "Detracción",
+        "Tipo de Nota", "Est. Comp.", "Incal"
+      ];
+
+      // Agregar CLU1 a CLU39
+      for (let i = 1; i <= 39; i++) headers.push("CLU" + i);
+
+      const trHead = document.createElement("tr");
+
+      // Checkbox
+      const thCheck = document.createElement("th");
+      thCheck.innerText = "✔";
+      trHead.appendChild(thCheck);
+
+      // N°
+      const thNum = document.createElement("th");
+      thNum.innerText = "N°";
+      trHead.appendChild(thNum);
+
+      headers.forEach(h => {
+        const th = document.createElement("th");
+        th.innerText = h;
+        th.style.minWidth = "100px";
+        th.style.height = "20px";
+        trHead.appendChild(th);
+      });
+
+      thead.appendChild(trHead);
+
+      // Crear 1 fila vacia (Total headers + 2 checkbox/num)
+      agregarFilaVaciaInicial(tbody, headers.length + 2);
+    }
+
+    function agregarFilaVaciaInicial(tbody, totalCols) {
+      const tr = document.createElement("tr");
+
+      // Checkbox
+      const tdCheck = document.createElement("td");
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      tdCheck.appendChild(checkbox);
+      tdCheck.style.textAlign = "center";
+      tr.appendChild(tdCheck);
+
+      // Numero
+      const tdNum = document.createElement("td");
+      tdNum.innerText = "1";
+      tdNum.style.fontWeight = "bold";
+      tdNum.contentEditable = false;
+      tr.appendChild(tdNum);
+
+      // Datos
+      for (let k = 2; k < totalCols; k++) {
+        const td = document.createElement("td");
+        td.contentEditable = true;
+        tr.appendChild(td);
+      }
+      tbody.appendChild(tr);
+    }
+
+
+    document.getElementById('csvFile').addEventListener('change', function (e) {
+      const file = e.target.files[0];
+      const reader = new FileReader();
+      reader.onload = function (event) {
+        crearTabla(event.target.result);
+      };
+      reader.readAsText(file);
+    });
+
+    function crearTabla(texto) {
+      const filas = texto.trim().split("\n");
+      const tabla = document.getElementById("tabla");
+      const thead = tabla.querySelector("thead");
+      const tbody = tabla.querySelector("tbody");
+
+      thead.innerHTML = "";
+      tbody.innerHTML = "";
+
+      let rucDetectado = "", denominacionDetectada = "", periodoDetectado = "";
+
+      filas.forEach((fila, i) => {
+        const tr = document.createElement("tr");
+        const columnas = fila.split(",");
+
+        if (i == 0) {
+          // ENCABEZADO
+
+          // 1. Checkbox Header
+          const thCheck = document.createElement("th");
+          thCheck.style.width = "30px";
+          thCheck.innerText = "✔";
+          tr.appendChild(thCheck);
+
+          // 2. Numero Header
+          const thRegistro = document.createElement("th");
+          thRegistro.innerText = "N°";
+          tr.appendChild(thRegistro);
+
+          // 3. Data Headers
+          columnas.forEach(col => {
+            const th = document.createElement("th");
+            th.innerText = col;
+            tr.appendChild(th);
+          });
+
+          thead.appendChild(tr);
+
+        } else {
+
+          // 1. Checkbox Column
+          const tdCheck = document.createElement("td");
+          const checkbox = document.createElement("input");
+          checkbox.type = "checkbox";
+          tdCheck.appendChild(checkbox);
+          tdCheck.style.textAlign = "center";
+          tr.appendChild(tdCheck);
+
+          // 2. Columna Numero de Registro
+          const tdRegistro = document.createElement("td");
+          tdRegistro.innerText = i;
+          tdRegistro.style.fontWeight = "bold";
+          tdRegistro.contentEditable = false;
+          tr.appendChild(tdRegistro);
+
+          // 3. Data Columns
+          columnas.forEach((col, j) => {
+            const td = document.createElement("td");
+            td.contentEditable = true;
+
+            // DETECTAR DATOS DE LA PRIMERA FILA DE DATOS (i==1)
+            // Asumiendo formato: col 0 = RUC, col 1 = Denom, col 2 = Periodo
+            if (i == 1) {
+              if (j == 0) rucDetectado = col;
+              if (j == 1) denominacionDetectada = col;
+              if (j == 2) periodoDetectado = col;
+            }
+
+            // Dejar vacía columna 4 (index 3) si se requiere limpiar
+            // (Mantenemos logica anterior: j==3 vacio)
+            if (j == 3) {
+              td.innerText = "";
+            } else {
+              td.innerText = col;
+            }
+
+            tr.appendChild(td);
+          });
+
+          tbody.appendChild(tr);
+        }
+
+      });
+
+      // ACTUALIZAR INPUTS CON LO DETECTADO
+      if (rucDetectado) document.getElementById("txtRuc").value = rucDetectado;
+      if (denominacionDetectada) document.getElementById("txtDenom").value = denominacionDetectada;
+
+      if (periodoDetectado && periodoDetectado.length >= 6) {
+        const anio = periodoDetectado.substring(0, 4);
+        const mes = periodoDetectado.substring(4, 6);
+        document.getElementById("selAnio").value = anio;
+        document.getElementById("selMes").value = mes;
+      }
+
+      // No necesitamos mostrarInfo ya que ahora estan los inputs
+    }
+
+    function actualizarTodo() {
+      const txtRuc = document.getElementById("txtRuc").value;
+      const txtDenom = document.getElementById("txtDenom").value;
+      const anio = document.getElementById("selAnio").value;
+      const mes = document.getElementById("selMes").value;
+      const periodoFull = anio + mes;
+
+      const tabla = document.getElementById("tabla");
+      const tbody = tabla.querySelector("tbody");
+      const filas = tbody.rows;
+
+      for (let i = 0; i < filas.length; i++) {
+        const celdas = filas[i].cells;
+        // Indices en TBODY: 0=chk, 1=Num, 2=RUC, 3=Denom, 4=Periodo
+        if (celdas.length > 4) {
+          celdas[2].innerText = txtRuc;
+          celdas[3].innerText = txtDenom;
+          celdas[4].innerText = periodoFull;
+        }
+      }
+    }
+
+    function agregarFila() {
+      const tabla = document.getElementById("tabla");
+      const tbody = tabla.querySelector("tbody");
+
+      // Calculate columns based on header
+      const headerCells = tabla.querySelector("thead tr").cells;
+      const totalColumns = headerCells.length;
+
+      const tr = document.createElement("tr");
+
+      // 1. Checkbox
+      const tdCheck = document.createElement("td");
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      tdCheck.appendChild(checkbox);
+      tdCheck.style.textAlign = "center";
+      tr.appendChild(tdCheck);
+
+      // 2. Número automático
+      const numeroActual = tbody.rows.length + 1;
+      const tdRegistro = document.createElement("td");
+      tdRegistro.innerText = numeroActual;
+      tdRegistro.style.fontWeight = "bold";
+      tdRegistro.contentEditable = false;
+      tr.appendChild(tdRegistro);
+
+      // OBTENER VALORES ACTUALES
+      const currentRuc = document.getElementById("txtRuc").value;
+      const currentDenom = document.getElementById("txtDenom").value;
+      const anio = document.getElementById("selAnio").value;
+      const mes = document.getElementById("selMes").value;
+      const currentPeriodo = anio + mes;
+
+      // 3. Data Columns
+      // Empezamos desde i=2 (que corresponde a la columna de datos 0)
+      for (let i = 2; i < totalColumns; i++) {
+        const td = document.createElement("td");
+        td.contentEditable = true;
+
+        // Auto-fill logic based on column index
+        // i=2 -> RUC
+        // i=3 -> Denom
+        // i=4 -> Periodo
+
+        if (i == 2) td.innerText = currentRuc;
+        else if (i == 3) td.innerText = currentDenom;
+        else if (i == 4) td.innerText = currentPeriodo;
+        else td.innerText = "";
+
+        tr.appendChild(td);
+      }
+
+      tbody.appendChild(tr);
+    }
+
+    function eliminarFilas() {
+      const tabla = document.getElementById("tabla");
+      const tbody = tabla.querySelector("tbody");
+      const filas = Array.from(tbody.rows);
+
+      filas.forEach(fila => {
+        const checkbox = fila.cells[0].querySelector("input[type='checkbox']");
+        if (checkbox && checkbox.checked) {
+          tbody.removeChild(fila);
+        }
+      });
+
+      // Reordenar Numeros
+      Array.from(tbody.rows).forEach((fila, index) => {
+        fila.cells[1].innerText = index + 1;
+      });
+    }
+
+    function exportarTXT() {
+      const tabla = document.getElementById("tabla");
+      let txt = "";
+      const separador = "|";
+
+      // Header REMOVIDO por solicitud del usuario
+      // "...que no se exporten los encabezados solo los datos..."
+
+      // Body
+      const filas = tabla.querySelectorAll("tbody tr");
+      filas.forEach(fila => {
+        let datos = [];
+        const celdas = fila.querySelectorAll("td");
+        // Skip index 0 (checkbox) and index 1 (number)
+        for (let i = 2; i < celdas.length; i++) {
+          datos.push(celdas[i].innerText);
+        }
+        txt += datos.join(separador) + "\n";
+      });
+
+      // Generar Nombre de Archivo
+      // Usar los valores de los INPUTS, que son los actuales
+      const ruc = document.getElementById("txtRuc").value;
+      const anio = document.getElementById("selAnio").value;
+      const mes = document.getElementById("selMes").value;
+      const periodo = anio + mes;
+
+      let nombreArchivo = "exportado.txt";
+      if (ruc && periodo) {
+        nombreArchivo = `LE${ruc}${periodo}00080400021112.txt`;
+      }
+
+      const blob = new Blob([txt], { type: "text/plain" });
+      const enlace = document.createElement("a");
+      enlace.href = URL.createObjectURL(blob);
+      enlace.download = nombreArchivo;
+      enlace.click();
+    }
+
+  </script>
+
+</body>
+
+</html>

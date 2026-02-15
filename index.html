@@ -95,7 +95,16 @@
     <img src="favicon.png" alt="Logo" style="height: 50px;">
   </div>
 
-  <h2>Editor de Comprobantes para Reemplazo de RCE</h2>
+  <h2 id="tituloPrincipal">Editor de Comprobantes para Reemplazo de RCE</h2>
+
+  <div style="margin-top: 15px; margin-bottom: 20px;">
+    <label style="margin-right: 20px; font-weight: bold; cursor: pointer;">
+      <input type="radio" name="mode" value="RCE" checked onchange="cambiarModo()"> Reemplazo RCE (Compras)
+    </label>
+    <label style="font-weight: bold; cursor: pointer;">
+      <input type="radio" name="mode" value="RVIE" onchange="cambiarModo()"> Reemplazo RVIE (Ventas)
+    </label>
+  </div>
 
   <input type="file" id="csvFile" accept=".csv, .txt">
   <button onclick="agregarFila()">Agregar Fila</button>
@@ -161,9 +170,35 @@
   <script>
 
 
-    // VARIABLES GLOBALES (ya no son estrictamente necesarias pero las mantenemos por compatibilidad si se usan)
-    let globalRuc = "";
-    let globalPeriodo = "";
+    // CONFIGURACION DE COLUMNAS
+    const COLUMNS = {
+      RCE: [
+        "RUC", "Apellidos y Nombres o Razón Social", "Periodo", "CAR SUNAT", "Fecha de emisión",
+        "Fecha Vcto/Pago", "Tipo CP/Doc.", "Serie del CDP", "Año", "Nro CP o Doc. Nro Inicial (Rango)",
+        "Nro Final (Rango)", "Tipo Doc Identidad", "Nro Doc Identidad", "Apellidos Nombres/ Razón Social",
+        "BI Gravado DG", "IGV / IPM DG", "BI Gravado DGNG", "IGV / IPM DGNG", "BI Gravado DNG",
+        "IGV / IPM DNG", "Valor Adq. NG", "ISC", "ICBPER", "Otros Trib/ Cargos", "Total CP",
+        "Moneda", "Tipo de Cambio", "Fecha Emisión Doc Modificado", "Tipo CP Modificado",
+        "Serie CP Modificado", "COD. DAM O DSI", "Nro CP Modificado", "Clasif de Bss y Sss",
+        "ID Proyecto Operadores", "PorcPart", "IMB", "CAR Orig/ Ind E o I", "Detracción",
+        "Tipo de Nota", "Est. Comp.", "Incal"
+      ],
+      RVIE: [
+        "RUC", "Apellidos y Nombres o Razón Social", "Periodo", "CAR SUNAT", "Fecha de emisión",
+        "Fecha Vcto/Pago", "Tipo CP/Doc.", "Serie del CDP", "Nro CP o Doc. Nro Inicial (Rango)",
+        "Nro Final (Rango)", "Tipo Doc Identidad", "Nro Doc Identidad", "Apellidos Nombres/ Razón Social",
+        "Valor Facturado Exportación", "BI Gravada", "Dscto BI", "IGV / IPM", "Dscto IGV / IPM",
+        "Mto Exonerado", "Mto Inafecto", "ISC", "BI Grav IVAP", "IVAP", "ICBPER", "Otros Tributos",
+        "Total CP", "Moneda", "Tipo de Cambio", "Fecha Emisión Doc Modificado", "Tipo CP Modificado",
+        "Serie CP Modificado", "Nro CP Modificado", "ID Proyecto Operadores Atribución", "Tipo de Nota",
+        "Est. Comp", "Valor FOB Embarcado", "Valor OP Gratuitas", "Tipo Operación", "DAM / CP", "CLU"
+      ]
+    };
+
+    // Agregar CLU1-39 a RCE
+    for (let i = 1; i <= 39; i++) COLUMNS.RCE.push("CLU" + i);
+
+    let currentMode = "RCE";
 
     // INICIALIZACION
     window.onload = function () {
@@ -182,6 +217,23 @@
       crearTablaDefault();
     };
 
+    function cambiarModo() {
+      const radios = document.getElementsByName('mode');
+      for (const r of radios) {
+        if (r.checked) {
+          currentMode = r.value;
+          break;
+        }
+      }
+
+      // Actualizar Titulo
+      document.getElementById("tituloPrincipal").innerText =
+        currentMode === "RCE" ? "Editor de Comprobantes para Reemplazo de RCE" : "Editor de Comprobantes para Reemplazo RVIE";
+
+      // Limpiar y resetear la tabla con las columnas correctas
+      crearTablaDefault();
+    }
+
     function crearTablaDefault() {
       const tabla = document.getElementById("tabla");
       const thead = tabla.querySelector("thead");
@@ -189,21 +241,8 @@
       thead.innerHTML = "";
       tbody.innerHTML = "";
 
-      // Headers especificos
-      const headers = [
-        "RUC", "Apellidos y Nombres o Razón Social", "Periodo", "CAR SUNAT", "Fecha de emisión",
-        "Fecha Vcto/Pago", "Tipo CP/Doc.", "Serie del CDP", "Año", "Nro CP o Doc. Nro Inicial (Rango)",
-        "Nro Final (Rango)", "Tipo Doc Identidad", "Nro Doc Identidad", "Apellidos Nombres/ Razón Social",
-        "BI Gravado DG", "IGV / IPM DG", "BI Gravado DGNG", "IGV / IPM DGNG", "BI Gravado DNG",
-        "IGV / IPM DNG", "Valor Adq. NG", "ISC", "ICBPER", "Otros Trib/ Cargos", "Total CP",
-        "Moneda", "Tipo de Cambio", "Fecha Emisión Doc Modificado", "Tipo CP Modificado",
-        "Serie CP Modificado", "COD. DAM O DSI", "Nro CP Modificado", "Clasif de Bss y Sss",
-        "ID Proyecto Operadores", "PorcPart", "IMB", "CAR Orig/ Ind E o I", "Detracción",
-        "Tipo de Nota", "Est. Comp.", "Incal"
-      ];
-
-      // Agregar CLU1 a CLU39
-      for (let i = 1; i <= 39; i++) headers.push("CLU" + i);
+      // Headers especificos segun modo
+      const headers = COLUMNS[currentMode];
 
       const trHead = document.createElement("tr");
 
@@ -227,7 +266,7 @@
 
       thead.appendChild(trHead);
 
-      // Crear 1 fila vacia (Total headers + 2 checkbox/num)
+      // Crear 1 fila vacia
       agregarFilaVaciaInicial(tbody, headers.length + 2);
     }
 
@@ -370,7 +409,11 @@
           const td = document.createElement("td");
           td.contentEditable = true;
 
-          if (k < columnas.length) {
+
+          // Forzar columna 3 (CAR SUNAT) vacia en ambos modos
+          if (k === 3) {
+            td.innerText = "";
+          } else if (k < columnas.length) {
             td.innerText = columnas[k];
           } else {
             td.innerText = "";
@@ -521,7 +564,15 @@
       let nombreBase = "exportado";
 
       if (ruc && periodo) {
-        nombreBase = `LE${ruc}${periodo}00080400021112`;
+        // Logica de nombre segun modo
+        if (currentMode === "RCE") {
+          // RCE: ...00080400021112
+          nombreBase = `LE${ruc}${periodo}00080400021112`;
+        } else {
+          // RVIE (Ventas)
+          // Propuesto: ...00140400021112 (Codigo de libro 14.04.00)
+          nombreBase = `LE${ruc}${periodo}00140400021112`;
+        }
       }
 
       let nombreArchivo = nombreBase + extension;

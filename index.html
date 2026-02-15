@@ -86,6 +86,7 @@
     }
   </style>
 
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 </head>
 
 <body>
@@ -475,15 +476,31 @@
       const periodo = anio + mes;
 
       let nombreArchivo = "exportado.txt";
+      let nombreBase = "exportado";
+
       if (ruc && periodo) {
-        nombreArchivo = `LE${ruc}${periodo}00080400021112.txt`;
+        nombreBase = `LE${ruc}${periodo}00080400021112`;
+        nombreArchivo = `${nombreBase}.txt`;
       }
 
+      // 1. Descargar TXT
       const blob = new Blob([txt], { type: "text/plain" });
       const enlace = document.createElement("a");
       enlace.href = URL.createObjectURL(blob);
       enlace.download = nombreArchivo;
       enlace.click();
+
+      // 2. Descargar ZIP
+      const zip = new JSZip();
+      zip.file(nombreArchivo, txt);
+
+      zip.generateAsync({ type: "blob" })
+        .then(function (content) {
+          const enlaceZip = document.createElement("a");
+          enlaceZip.href = URL.createObjectURL(content);
+          enlaceZip.download = `${nombreBase}.zip`;
+          enlaceZip.click();
+        });
     }
 
   </script>
